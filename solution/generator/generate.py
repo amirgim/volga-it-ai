@@ -133,6 +133,8 @@ def main() -> None:
             img.save(os.path.join(args.out, name))
             W, H = img.size
             # YOLO label: full-frame box
+            if i%500 == 0:
+                print(f"{i}/{args.n}")
             with open(os.path.join(args.labels, f"syn_{i:06d}.txt"), "w") as lf:
                 cls = {"type1": 0, "type1a": 1, "type1b": 2, "other": 3}[ptype]
                 lf.write(f"{cls} 0.5 0.5 0.9 0.9\n")
