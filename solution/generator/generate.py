@@ -144,7 +144,7 @@ def main() -> None:
                 plate_num = plate
             rel = f"images/synthetic/{name}"
             w.writerow([rel, plate_num, ptype, f"0,0,{W},{H}", "",
-                        1, 1, "generator", "own", "synthetic"])
+                        1, 1, "generator", "own_photo", "synthetic"])
     print(f"generated {args.n} images into {args.out}")
 
 
