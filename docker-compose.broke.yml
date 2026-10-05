@@ -1,0 +1,34 @@
+name: plate-recognition-broke
+
+x-base: &base
+  build:
+    context: .
+    dockerfile: Dockerfile.broke
+  image: plate-recognition-broke:latest
+  working_dir: /app
+  volumes:
+    # Bind mount: host code edits appear live in the container.
+    # No rebuild needed after editing .py files.
+    - .:/app
+  environment:
+    PYTHONUNBUFFERED: "1"
+    PYTHONDONTWRITEBYTECODE: "1"
+  stdin_open: true
+  tty: true
+
+services:
+  generate:
+    <<: *base
+    command: python -m broke.make_synthetic --n 5000 --seed 42
+
+  infer:
+    <<: *base
+    command: python -m broke.run --input test_images --output result.csv
+
+  fetch:
+    <<: *base
+    command: python scripts/fetch_open_plates.py --limit 200
+
+  shell:
+    <<: *base
+    command: bash

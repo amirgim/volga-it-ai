@@ -1,0 +1,15 @@
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+**/.venv
+**/venv
+**/.idea
+**/.vscode
+dataset/images/real/
+dataset/images/synthetic/
+dataset/labels/
+dataset/meta.csv
+models/
+runs/
+*.log
