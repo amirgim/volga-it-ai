@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "lazy-accurate": {
+      "source": "niyazgim/uniskilla",
+      "sourceType": "github",
+      "skillPath": ".agents/lazy-accurate/SKILL.md",
+      "computedHash": "75b839cb607a9010f4fe83da2e2e4d8ebd0883d835360f4d711ea40c72fe5f5a"
+    }
+  }
+}
