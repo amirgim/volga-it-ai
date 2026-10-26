@@ -7,8 +7,6 @@ x-base: &base
   image: plate-recognition-broke:latest
   working_dir: /app
   volumes:
-    # Bind mount: host code edits appear live in the container.
-    # No rebuild needed after editing .py files.
     - .:/app
   environment:
     PYTHONUNBUFFERED: "1"
@@ -16,6 +14,10 @@ x-base: &base
   stdin_open: true
   tty: true
 
+# infer works out of the box on dataset/images/real (always present).
+# To run on test_images/ use:
+#   docker compose -f docker-compose.broke.yml run --rm infer \
+#     python -m broke.run --input test_images --output result.csv
 services:
   generate:
     <<: *base
@@ -23,7 +25,7 @@ services:
 
   infer:
     <<: *base
-    command: python -m broke.run --input test_images --output result.csv
+    command: python -m broke.run --input dataset/images/real --output result.csv
 
   fetch:
     <<: *base
@@ -31,4 +33,20 @@ services:
 
   shell:
     <<: *base
+    command: bash
+
+  train:
+    build:
+      context: .
+      dockerfile: Dockerfile.train
+    image: plate-recognition-train:latest
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      PYTHONUNBUFFERED: "1"
+    # ultralytics dataloader uses /dev/shm; default 64MB is too small
+    shm_size: "2gb"
+    stdin_open: true
+    tty: true
     command: bash

@@ -1,18 +1,19 @@
 import csv
 import os
+import sys
 import time
+from pathlib import Path
 from typing import Dict, List
 
 import cv2
 import numpy as np
-import torch
 
 from .detector import Detector
-from .ocr import CRNN, greedy_decode
-from .postprocess import mask_low_conf, normalize, is_valid
+from .postprocess import mask_low_conf, normalize, postprocess
+from .unfold import OCR_H, OCR_W, unfold_1a
 
 MEAN, STD = 0.5, 0.5
-OCR_SIZE = (128, 32)  # (W, H)
+OCR_SIZE = (OCR_W, OCR_H)
 EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
 
 
@@ -35,31 +36,54 @@ def _preprocess(crop: np.ndarray) -> np.ndarray:
     return x[None, None, ...]
 
 
+def _fits_mask(p: str) -> bool:
+    """Plate must look like A123BC77 / A123BC777 ('#' = unreadable position)."""
+    if len(p) not in (8, 9) or p.count("#") > 2:
+        return False
+    for i, c in enumerate(p):
+        if c == "#":
+            continue
+        if c not in ("ABEKMHOPCTYX" if i in (0, 4, 5) else "0123456789"):
+            return False
+    return not (len(p) == 9 and p[6] not in "#127")
+
+
 class Pipeline:
-    def __init__(self, det_weights: str, ocr_weights: str,
-                 device: str = "cuda", use_onnx: bool = True):
+    def __init__(self, det_weights, ocr_weights, device="cpu", use_onnx=True):
         self.device = device
-        self.detector = Detector(det_weights, device=device)
+        self.detector = Detector(det_weights, device=device, conf=0.45)
 
         self.ort = None
         self.ocr = None
-        if use_onnx and ocr_weights.endswith(".onnx"):
+        self.fallback = False
+        ocr_path = Path(ocr_weights) if ocr_weights else None
+
+        if not ocr_path or not ocr_path.exists():
+            print(f"[pipeline] OCR weights not found at {ocr_weights!r}, "
+                  f"using Tesseract fallback", file=sys.stderr)
+            from broke.recognize import read_plate
+            self._tess = read_plate
+            self.fallback = True
+        elif use_onnx and str(ocr_path).endswith(".onnx"):
             import onnxruntime as ort
             providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
                          if device == "cuda" else ["CPUExecutionProvider"])
-            self.ort = ort.InferenceSession(ocr_weights, providers=providers)
+            self.ort = ort.InferenceSession(str(ocr_path), providers=providers)
             self.ort_input = self.ort.get_inputs()[0].name
         else:
+            import torch
+            from .ocr import CRNN
+            self._torch = torch
             self.ocr = CRNN()
-            self.ocr.load_state_dict(torch.load(ocr_weights, map_location=device))
+            self.ocr.load_state_dict(torch.load(str(ocr_path), map_location=device))
             self.ocr.to(device).eval()
 
     def _ocr(self, x: np.ndarray) -> np.ndarray:
         if self.ort is not None:
             out = self.ort.run(None, {self.ort_input: x})[0]
             return out[0] if out.ndim == 3 else out
-        with torch.no_grad():
-            t = torch.from_numpy(x).to(self.device)
+        with self._torch.no_grad():
+            t = self._torch.from_numpy(x).to(self.device)
             return self.ocr(t)[0].cpu().numpy()
 
     def process(self, img: np.ndarray) -> List[Dict]:
@@ -70,16 +94,27 @@ class Pipeline:
             crop = _crop(img, d["bbox"])
             if crop.size == 0:
                 continue
-            x = _preprocess(crop)
-            logits = self._ocr(x)
-            text, confs = greedy_decode(logits)
-            text = normalize(text)
-            if not text:
+            if d["type"] == "type1a":
+                crop = unfold_1a(crop)
+
+            if self.fallback:
+                text = self._tess(crop)
+                if not text:
+                    continue
+                ocr_conf = 0.5
+                plate = postprocess(text, None, min_conf=0.0)
+            else:
+                from .ocr import greedy_decode
+                logits = self._ocr(_preprocess(crop))
+                text, confs = greedy_decode(logits)
+                text = normalize(text)
+                if not text:
+                    continue
+                ocr_conf = float(np.mean(confs)) if confs else 0.0
+                plate = postprocess(text, confs, min_conf=0.35)
+
+            if plate is None:
                 continue
-            plate = mask_low_conf(text, confs, 0.5)
-            if all(c == "#" for c in plate):
-                continue
-            ocr_conf = float(np.mean(confs)) if confs else 0.0
             out.append({
                 "plate_num": plate,
                 "plate_type": d["type"],
@@ -88,19 +123,24 @@ class Pipeline:
         return out
 
 
-def run_dir(input_dir: str, output_csv: str, det_weights: str,
-            ocr_weights: str, device: str = "cuda", use_onnx: bool = True) -> None:
+def run_dir(input_dir, output_csv, det_weights, ocr_weights,
+            device="cpu", use_onnx=True) -> None:
     p = Pipeline(det_weights, ocr_weights, device, use_onnx)
     files = sorted(f for f in os.listdir(input_dir)
                    if os.path.splitext(f)[1].lower() in EXTS)
     rows: List[tuple] = []
     t0 = time.time()
     for f in files:
-        img = cv2.imread(os.path.join(input_dir, f))
-        if img is None:
-            continue
-        for r in p.process(img):
-            rows.append((f, r["plate_num"], r["plate_type"], r["confidence"]))
+        try:
+            path = os.path.join(input_dir, f)
+            flag = cv2.IMREAD_REDUCED_COLOR_2 if os.path.getsize(path) > 1_500_000 else cv2.IMREAD_COLOR
+            img = cv2.imread(path, flag)
+            if img is None:
+                continue
+            for r in p.process(img):
+                rows.append((f, r["plate_num"], r["plate_type"], r["confidence"]))
+        except Exception as e:  # one bad image must never kill the whole run
+            print(f"[pipeline] {f}: {e}", file=sys.stderr)
     elapsed = time.time() - t0
     with open(output_csv, "w", encoding="utf-8", newline="") as fh:
         w = csv.writer(fh, delimiter=";")

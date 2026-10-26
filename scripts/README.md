@@ -57,6 +57,29 @@ Wikimedia has **10–200 usable Russian-plate photos** in total. Not
 thousands. Budget 1–2 runs of `--limit 200` and then move to your own
 photos or another public dataset.
 
+## bootstrap_weights.py
+
+Bakes YOLO weights locally so the pipeline works **offline** (task requirement).
+Ultralytics otherwise auto-downloads `yolov8n.pt` from github — fine for dev, breaks
+grading in an air-gapped environment.
+
+```bash
+pip install -r requirements.txt
+python scripts/bootstrap_weights.py --epochs 20
+# → models/yolo.pt  (~6 MB)
+```
+
+CPU: ~15–20 min for 20 epochs on 5000 synthetic images. GPU: ~3 min.
+
+**Quality caveat:** trained on the current synthetic labels (`0.5 0.5 0.9 0.9`
+— plate fills the frame). Will detect **full-frame plates only**. For real photos
+with small, off-center plates you still need to fix `generator/generate.py`
+(insertion into backgrounds) and re-run bootstrap.
+
+OCR weights are not needed: `broke/` uses Tesseract (LSTM ships with the OS
+package), and `src/pipeline.py` auto-falls back to it when `models/crnn.onnx` is
+absent.
+
 ### Related
 
 - `dataset/images/real/` — where images land

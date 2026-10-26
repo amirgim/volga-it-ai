@@ -1,0 +1,1 @@
+/home/a/projects/volga-it-ai/dataset/labels/synthetic/syn_004067.txt

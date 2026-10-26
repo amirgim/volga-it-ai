@@ -1,6 +1,8 @@
+# Train/val split for YOLOv8. Point val at real images once they are
+# annotated — training vs synthetic-only val gives misleading metrics.
 path: ../dataset
 train: images/real
-val: images/synthetic
+val: images/real
 names:
   0: type1
   1: type1a

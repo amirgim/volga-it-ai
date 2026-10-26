@@ -1,1 +1,10 @@
-repomix-output*
+repomix-output*repomix-output*
+runs/
+*.cache
+
+.venv/
+__pycache__/
+dataset/crops/
+dataset/crops_corrupt_*/
+dataset/images/train/
+submission.zip

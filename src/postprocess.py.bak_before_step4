@@ -1,0 +1,46 @@
+"""Plate post-processing: Cyrillic→Latin, alphabet filter, confidence mask,
+format check (GOST R 50577-2018 type 1 / 1A / 1B)."""
+ALPHABET = "0123456789ABEKMHOPCTYX"
+LETTERS = set("ABEKMHOPCTYX")
+DIGITS = set("0123456789")
+REGION_PREFIX_3 = set("127")
+
+_CYR_TO_LAT = str.maketrans({
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M",
+    "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T",
+    "У": "Y", "Х": "X",
+})
+
+
+def normalize(text: str) -> str:
+    """Upper-case, translate Cyrillic, drop anything outside the plate alphabet."""
+    text = text.upper().translate(_CYR_TO_LAT)
+    return "".join(c for c in text if c in ALPHABET)
+
+
+def mask_low_conf(text: str, confs: list[float], thresh: float = 0.5) -> str:
+    """Replace chars whose per-char confidence is below `thresh` with '#'."""
+    out = []
+    for i, c in enumerate(text):
+        if i < len(confs) and confs[i] < thresh:
+            out.append("#")
+        else:
+            out.append(c)
+    return "".join(out)
+
+
+def is_valid(plate: str) -> bool:
+    """Check 8- or 9-char GOST plate format. '#' positions fail validation."""
+    if len(plate) not in (8, 9):
+        return False
+    if plate[0] not in LETTERS or plate[4] not in LETTERS or plate[5] not in LETTERS:
+        return False
+    for i in (1, 2, 3):
+        if plate[i] not in DIGITS:
+            return False
+    region = plate[6:]
+    if not all(c in DIGITS for c in region):
+        return False
+    if len(region) == 3 and region[0] not in REGION_PREFIX_3:
+        return False
+    return True

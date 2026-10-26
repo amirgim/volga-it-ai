@@ -25,16 +25,21 @@ class CRNN(nn.Module):
                 nn.MaxPool2d(2, 2),
             )
 
+                # ponytail: T=32 (was 16). CTC needs T >= 2L-1, L=9 -> T>=17.
+        # Third pool is height-only to keep width 32; T=16 cannot fit 9 chars.
         self.cnn = nn.Sequential(
-            block(1, 32),     # 32 x 16 x 64
-            block(32, 64),    # 64 x 8 x 32
-            block(64, 128),   # 128 x 4 x 16
+            block(1, 32),                     # 32 x 16 x 64
+            block(32, 64),                    # 64 x 8 x 32
+            nn.Conv2d(64, 128, 3, 1, 1),      # 128 x 8 x 32
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d((2, 1), (2, 1)),     # 128 x 4 x 32
             nn.Conv2d(128, 128, 3, 1, 1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d((2, 1), (2, 1)),  # 128 x 2 x 16
+            nn.MaxPool2d((4, 1), (4, 1)),     # 128 x 1 x 32
         )
-        self.rnn = nn.LSTM(128 * 2, hidden, num_layers=2,
+        self.rnn = nn.LSTM(128, hidden, num_layers=2,
                            bidirectional=True, batch_first=True)
         self.fc = nn.Linear(hidden * 2, num_classes)
 
